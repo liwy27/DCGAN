@@ -161,11 +161,13 @@ def get_optimizer(g_loss, d_loss, beta1=0.4, learning_rate=0.001):
 
 def plot_images(samples):
     samples = (samples + 1) / 2
-    fig, axes = plt.subplots(nrows=1, ncols=15, sharex=True, sharey=True, figsize=(30,2))
+
+    fig, axes = plt.subplots(nrows=1, ncols=15, sharex=True, sharey=True, figsize=(30, 2))
     for img, ax in zip(samples, axes):
         ax.imshow(img.reshape((32, 32, 3)), cmap='Greys_r')
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
+        plt.savefig('./data.png')
     fig.tight_layout(pad=0)
 
 
