@@ -9,9 +9,9 @@ def collect_data(file_path):
     data = []
     for root, folder, file in os.walk(file_path):
         for i in file:
-            img_name = "%s\%s" % (root, i)
+            img_name = "%s/%s" % (root, i)
             print(img_name)
-            image = np.array(Image.open(img_name).resize((32, 32))).astype(np.float32) / 127.5 - 1
+            image = np.array(Image.open(img_name).resize((128, 128))).astype(np.float32) / 127.5 - 1
             data.append(image)
     return np.array(data)
 
@@ -31,7 +31,7 @@ def get_inputs(noise_dim, image_height, image_width, image_depth):
     return inputs_real, inputs_noise
 
 
-def get_generator(noise_img, output_dim, is_train=True, alpha=0.01):
+def get_generator(noise_img, output_dim=3, is_train=True, alpha=0.01):
     """
     @Author: Nelson Zhao
     --------------------
@@ -42,31 +42,26 @@ def get_generator(noise_img, output_dim, is_train=True, alpha=0.01):
     """
 
     with tf.variable_scope("generator", reuse=(not is_train)):
-        # 100 x 1 to 4 x 4 x 512
+        # 100 x 1 to 8 * 8 * 12
         # 全连接层
-        layer1 = tf.layers.dense(noise_img, 4 * 4 * 512)
-        layer1 = tf.reshape(layer1, [-1, 4, 4, 512])
-        # batch normalization
-        layer1 = tf.layers.batch_normalization(layer1, training=is_train)
-        # Leaky ReLU
-        layer1 = tf.maximum(alpha * layer1, layer1)
-        # dropout
-        layer1 = tf.nn.dropout(layer1, keep_prob=0.8)
+        layer1 = tf.layers.dense(noise_img, 8 * 8 * 12, activation=tf.nn.relu)
+        layer1 = tf.reshape(layer1, [-1, 8, 8, 12])
 
         # 4 x 4 x 512 to 8 x 8 x 256
-        layer2 = tf.layers.conv2d_transpose(layer1, 256, 4, strides=2, padding='same')
+        layer2 = tf.layers.conv2d_transpose(layer1, 384, 5, strides=2, padding='same', activation=tf.nn.relu)
         layer2 = tf.layers.batch_normalization(layer2, training=is_train)
-        layer2 = tf.maximum(alpha * layer2, layer2)
-        layer2 = tf.nn.dropout(layer2, keep_prob=0.8)
 
         # 8 x 8 256 to 16 x 16 x 128
-        layer3 = tf.layers.conv2d_transpose(layer2, 128, 3, strides=2, padding='same')
+        layer3 = tf.layers.conv2d_transpose(layer2, 256, 5, strides=2, padding='same', activation=tf.nn.relu)
         layer3 = tf.layers.batch_normalization(layer3, training=is_train)
-        layer3 = tf.maximum(alpha * layer3, layer3)
-        layer3 = tf.nn.dropout(layer3, keep_prob=0.8)
+        # layer3 = tf.maximum(alpha * layer3, layer3)
+        # layer3 = tf.nn.dropout(layer3, keep_prob=0.8)
+
+        layer4 = tf.layers.conv2d_transpose(layer3, 192, 5, strides=2, padding='same', activation=tf.nn.relu)
+        layer4 = tf.layers.batch_normalization(layer4, training=is_train)
 
         # 16 x 16 x 128 to 32 x 32 x 3
-        logits = tf.layers.conv2d_transpose(layer3, output_dim, 3, strides=2, padding='same')
+        logits = tf.layers.conv2d_transpose(layer4, output_dim, 5, strides=2, padding='same')
         # MNIST原始数据集的像素范围在0-1，这里的生成图片范围为(-1,1)
         # 因此在训练时，记住要把MNIST像素范围进行resize
         outputs = tf.tanh(logits)
@@ -74,7 +69,7 @@ def get_generator(noise_img, output_dim, is_train=True, alpha=0.01):
         return outputs
 
 
-def get_discriminator(inputs_img, reuse=False, alpha=0.01):
+def get_discriminator(inputs_img, reuse=False, alpha=0.2):
     """
     @Author: Nelson Zhao
     --------------------
@@ -83,26 +78,41 @@ def get_discriminator(inputs_img, reuse=False, alpha=0.01):
     """
 
     with tf.variable_scope("discriminator", reuse=reuse):
-        # 32 x 32 x 3 to 16 x 16 x 128
+        # 128 x 128 x 3 to 16 x 16 x 128
         # 第一层不加入BN
-        layer1 = tf.layers.conv2d(inputs_img, 128, 3, strides=2, padding='same')
+        layer1 = tf.layers.conv2d(inputs_img, 16, 3, strides=2, padding='same')
         layer1 = tf.maximum(alpha * layer1, layer1)
-        layer1 = tf.nn.dropout(layer1, keep_prob=0.8)
+        layer1 = tf.nn.dropout(layer1, keep_prob=0.5)
 
         # 16 x 16 x 128 to 8 x 8 x 256
-        layer2 = tf.layers.conv2d(layer1, 256, 3, strides=2, padding='same')
+        layer2 = tf.layers.conv2d(layer1, 32, 3, strides=1, padding='same')
         layer2 = tf.layers.batch_normalization(layer2, training=True)
         layer2 = tf.maximum(alpha * layer2, layer2)
-        layer2 = tf.nn.dropout(layer2, keep_prob=0.8)
+        layer2 = tf.nn.dropout(layer2, keep_prob=0.5)
 
         # 8 x 8 x 256 to 4 x 4 x 512
-        layer3 = tf.layers.conv2d(layer2, 512, 3, strides=2, padding='same')
+        layer3 = tf.layers.conv2d(layer2, 64, 3, strides=2, padding='same')
         layer3 = tf.layers.batch_normalization(layer3, training=True)
         layer3 = tf.maximum(alpha * layer3, layer3)
         layer3 = tf.nn.dropout(layer3, keep_prob=0.8)
 
+        layer4 = tf.layers.conv2d(layer3, 128, 3, strides=1, padding='same')
+        layer4 = tf.layers.batch_normalization(layer4, training=True)
+        layer4 = tf.maximum(alpha * layer4, layer4)
+        layer4 = tf.nn.dropout(layer4, keep_prob=0.5)
+
+        layer5 = tf.layers.conv2d(layer4, 256, 3, strides=2, padding='same')
+        layer5 = tf.layers.batch_normalization(layer5, training=True)
+        layer5 = tf.maximum(alpha * layer5, layer5)
+        layer5 = tf.nn.dropout(layer5, keep_prob=0.5)
+
+        layer6 = tf.layers.conv2d(layer5, 512, 3, strides=1, padding='same')
+        layer6 = tf.layers.batch_normalization(layer6, training=True)
+        layer6 = tf.maximum(alpha * layer6, layer6)
+        layer6 = tf.nn.dropout(layer6, keep_prob=0.5)
+
         # 4 x 4 x 512 to 4*4*512 x 1
-        flatten = tf.reshape(layer3, (-1, 4 * 4 * 512))
+        flatten = tf.reshape(layer6, (-1, 16 * 16 * 512))
         logits = tf.layers.dense(flatten, 1)
         outputs = tf.sigmoid(logits)
 
@@ -137,7 +147,7 @@ def get_loss(inputs_real, inputs_noise, image_depth, smooth=0.1):
     return g_loss, d_loss
 
 
-def get_optimizer(g_loss, d_loss, beta1=0.4, learning_rate=0.001):
+def get_optimizer(g_loss, d_loss, beta1=0.5, learning_rate=0.0002):
     """
     @Author: Nelson Zhao
     --------------------
@@ -159,16 +169,17 @@ def get_optimizer(g_loss, d_loss, beta1=0.4, learning_rate=0.001):
     return g_opt, d_opt
 
 
-def plot_images(samples):
+def plot_images(samples, n_samples):
     samples = (samples + 1) / 2
 
-    fig, axes = plt.subplots(nrows=1, ncols=15, sharex=True, sharey=True, figsize=(30, 2))
+    fig, axes = plt.subplots(nrows=1, ncols=n_samples, sharex=True, sharey=True, figsize=(128, 128))
     for img, ax in zip(samples, axes):
-        ax.imshow(img.reshape((32, 32, 3)), cmap='Greys_r')
+        ax.imshow(img.reshape((128, 128, 3)), cmap='Greys_r')
         ax.get_xaxis().set_visible(False)
         ax.get_yaxis().set_visible(False)
-        plt.savefig('./data.png')
     fig.tight_layout(pad=0)
+    plt.savefig('./data.png')
+    plt.close()
 
 
 def show_generator_output(sess, n_images, inputs_noise, output_dim):
@@ -192,13 +203,13 @@ def show_generator_output(sess, n_images, inputs_noise, output_dim):
 
 
 # 定义参数
-batch_size = 2
+batch_size = 100
 noise_size = 100
-epochs = 50
+epochs = 50000
 n_samples = 2
-learning_rate = 0.001
-beta1 = 0.4
-FILEPATH = "E:\\liwenyong\\program_py\\mobilenetv3\\data\\valid\dog"
+learning_rate = 0.0002
+beta1 = 0.5
+FILEPATH = "../mobilenetv3/data/train/dog"
 
 
 def train(noise_size, data_shape, batch_size, n_samples):
@@ -224,12 +235,12 @@ def train(noise_size, data_shape, batch_size, n_samples):
         sess.run(tf.global_variables_initializer())
         # 迭代epoch
         for e in range(epochs):
-            for batch_i in range(images.shape[0] // batch_size - 1):
+            for batch_i in range(images.shape[0] // batch_size):
                 steps += 1
                 batch_images = images[batch_i * batch_size: (batch_i + 1) * batch_size]
 
                 # scale to -1, 1
-                batch_images = batch_images * 2 - 1
+                # batch_images = batch_images * 2 - 1
 
                 # noise
                 batch_noise = np.random.uniform(-1, 1, size=(batch_size, noise_size))
@@ -248,7 +259,7 @@ def train(noise_size, data_shape, batch_size, n_samples):
                     losses.append((train_loss_d, train_loss_g))
                     # 显示图片
                     samples = show_generator_output(sess, n_samples, inputs_noise, data_shape[-1])
-                    plot_images(samples)
+                    plot_images(samples, n_samples)
                     print("Epoch {}/{}....".format(e + 1, epochs),
                           "Discriminator Loss: {:.4f}....".format(train_loss_d),
                           "Generator Loss: {:.4f}....".format(train_loss_g))
@@ -257,6 +268,6 @@ def train(noise_size, data_shape, batch_size, n_samples):
 if __name__ == '__main__':
     # collect_data(FILEPATH)
     with tf.Graph().as_default():
-        train(noise_size, [-1, 32, 32, 3], batch_size, n_samples)
+        train(noise_size, [-1, 128, 128, 3], batch_size, n_samples)
 
 
