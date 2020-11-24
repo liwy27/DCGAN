@@ -209,7 +209,7 @@ epochs = 50000
 n_samples = 2
 learning_rate = 0.0002
 beta1 = 0.5
-FILEPATH = "../mobilenetv3/data/train/dog"
+FILEPATH = "../mobilenetv3/data/train/cat"
 
 
 def train(noise_size, data_shape, batch_size, n_samples):
@@ -230,6 +230,7 @@ def train(noise_size, data_shape, batch_size, n_samples):
     g_loss, d_loss = get_loss(inputs_real, inputs_noise, data_shape[-1])
     g_train_opt, d_train_opt = get_optimizer(g_loss, d_loss, beta1, learning_rate)
     images = collect_data(FILEPATH)
+    saver = tf.train.Saver()
 
     with tf.Session() as sess:
         sess.run(tf.global_variables_initializer())
@@ -257,12 +258,15 @@ def train(noise_size, data_shape, batch_size, n_samples):
                     train_loss_g = g_loss.eval({inputs_real: batch_images,
                                                 inputs_noise: batch_noise})
                     losses.append((train_loss_d, train_loss_g))
+
                     # 显示图片
                     samples = show_generator_output(sess, n_samples, inputs_noise, data_shape[-1])
                     plot_images(samples, n_samples)
                     print("Epoch {}/{}....".format(e + 1, epochs),
                           "Discriminator Loss: {:.4f}....".format(train_loss_d),
                           "Generator Loss: {:.4f}....".format(train_loss_g))
+            if e % 100 == 0:
+                saver.save(sess, './model/model.ckpt', global_step = e + 1)
 
 
 if __name__ == '__main__':
